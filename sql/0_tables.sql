@@ -1,6 +1,5 @@
 drop table if exists party cascade;
-create table
-party
+create table party
 (
   party_id bigserial primary key,
   name text not null check (length(name) > 4)
@@ -8,11 +7,10 @@ party
 
 
 drop table if exists users cascade;
-create table
-users
+create table users
 (
-user_id bigserial primary key,
-name text not null
+  user_id bigserial primary key,
+  name text not null
 );
 
 
