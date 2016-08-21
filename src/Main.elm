@@ -23,14 +23,12 @@ type alias Model = { session : RemoteData String Session
                    , cookies : RemoteData String Cookies
                    }
 
-type Msg = FetchUser Int
-         | CookieMsg (RemoteMsg String Cookies)
-         | FetchFail String
-         | FetchSucceed Session
+type Msg = CookieMsg (RemoteMsg () String Cookies)
+         | SessionMsg (RemoteMsg Int String Session)
 
-type RemoteMsg e a = Ask
-                   | ReqFail e
-                   | ReqSuccess a
+type RemoteMsg n e a = Ask n
+                     | ReqFail e
+                     | ReqSuccess a
 
 main : Program Never
 main =
@@ -55,15 +53,20 @@ initialView : Session -> Html Msg
 initialView session =
     case session.user of
         Anonymous       -> Registration.view
-        Registered user -> Party.view session.party
+        Registered user -> case session.party of
+                             Nothing -> text "No party created"
+                             Just p  -> Party.view p
 
 
 init : (Model, Cmd Msg)
-init = update (CookieMsg Ask) { session = NotAsked, cookies = Loading }
+init = update (CookieMsg (Ask ())) { session = NotAsked, cookies = Loading }
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
+      (CookieMsg (ReqFail err)) ->
+        ({ model | cookies = Failure err }, Cmd.none)
+
       (CookieMsg (ReqSuccess d)) ->
         let
             updatedModel = { model | cookies = Success d }
@@ -73,15 +76,21 @@ update msg model =
             case msessionId of
               Nothing ->
                 update (CookieMsg (ReqFail "session-id not found")) updatedModel
-              Just sessionId -> update (FetchUser sessionId) updatedModel
+              Just sessionId -> update (SessionMsg (Ask sessionId)) updatedModel
 
-      (CookieMsg Ask) ->
+      (CookieMsg (Ask ())) ->
         (model, Task.perform (CookieMsg << ReqFail << toString)
                              (CookieMsg << ReqSuccess)
                              Cookies.get)
 
-      FetchUser sessionId ->
-          ({ model | session = Loading }, fetchSession sessionId)
+      (SessionMsg (Ask sessionId)) ->
+         ({ model | session = Loading }, fetchSession sessionId)
+
+      (SessionMsg (ReqSuccess session)) ->
+         ({ model | session = Success session }, Cmd.none)
+
+      (SessionMsg (ReqFail err)) ->
+         ({ model | session = Failure err }, Cmd.none)
 
 
 api : String -> String
@@ -92,4 +101,6 @@ fetchSession sessionId =
     let getSession = Http.get sessionDecoder
                        (api ("/sessions?session_id=eq." ++ toString sessionId))
     in
-        Task.perform (FetchFail << toString) FetchSucceed getSession
+        Task.perform (SessionMsg << ReqFail << toString)
+                     (SessionMsg << ReqSuccess)
+                     getSession
