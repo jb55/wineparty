@@ -8,8 +8,13 @@ import Main.Types exposing (..)
 import User.Types exposing (..)
 import Page exposing (..)
 
-nav : User -> Html Msg
-nav user = Html.nav [ class "navbar navbar-default navbar-static-top" ]
+onPage p p2 = if p == p2
+                then [ class "active" ]
+                else [ ]
+
+nav : Page -> User -> Html Msg
+nav page user =
+  Html.nav [ class "navbar navbar-default navbar-static-top" ]
     [ div [ class "container" ]
         [ div [ class "navbar-header" ]
             [ button [ attribute "aria-controls" "navbar"
@@ -28,9 +33,9 @@ nav user = Html.nav [ class "navbar navbar-default navbar-static-top" ]
             ]
         , div [ class "navbar-collapse collapse", id "navbar" ]
             [ ul [ class "nav navbar-nav" ]
-                [ li [ class "active" ]     [ a [ href "#" ] [ text "Home" ] ]
-                , li [] [ a [ onClick (SwitchPage TeamPage), href "javascript:false;" ] [ text "Team" ] ]
-                , li [] [ a [ onClick (SwitchPage PartyPage), href "javascript:false;" ] [ text "Party" ] ]
+                [ li (onPage page HomePage) [ a [ href "#" ] [ text "Home" ] ]
+                , li (onPage page TeamPage) [ a [ onClick (SwitchPage TeamPage), href "javascript:false;" ] [ text "Team" ] ]
+                , li (onPage page PartyPage) [ a [ onClick (SwitchPage PartyPage), href "javascript:false;" ] [ text "Party" ] ]
                 , li [ class "dropdown" ]
                     [ a [ attribute "aria-expanded" "false"
                         , attribute "aria-haspopup" "true"
@@ -66,9 +71,9 @@ userName user =
     Anonymous       -> "Anonymous"
     Registered user -> user.name
 
-mainView : User -> Html Msg -> Html Msg
-mainView user c =
+mainView : Page -> User -> Html Msg -> Html Msg
+mainView page user c =
   div []
-      [ nav user
+      [ nav page user
       , div [ class "container" ] [ c ] 
       ]

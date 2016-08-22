@@ -31,11 +31,12 @@ import Task exposing (..)
 type alias Cookies  = Dict String String
 type alias Remote a = RemoteData String a
 
-type alias Model = { session      : Remote Session
-                   , sessionId    : Maybe Int
-                   , page         : Page
-                   , error        : Maybe String
-                   , cookies      : Dict String String
+type alias Model = { session        : Remote Session
+                   , sessionLoading : Bool
+                   , sessionId      : Maybe Int
+                   , page           : Page
+                   , error          : Maybe String
+                   , cookies        : Dict String String
                    }
 
 main =
@@ -54,10 +55,7 @@ urlUpdate res model =
     Ok page ->
       let m = { model | page = page }
       in
-        case model.session of
-          NotAsked  -> update FetchSession m
-          Failure _ -> update FetchSession m
-          _         -> (m, Cmd.none)
+        update FetchSession m
 
 view : Model -> Html Msg
 view model =
@@ -73,7 +71,7 @@ view model =
                  Success s -> s.user
                  Failure _ -> Anonymous
     in
-        mainView user (div [] body)
+        mainView model.page user (div [] body)
 
 initialView : Page -> Session -> Html Msg
 initialView page session =
@@ -82,6 +80,7 @@ initialView page session =
                                      (registrationView reg)
     TeamPage             -> text "Team"
     PartyPage            -> text "Party"
+    HomePage             -> text "Home"
 
 type alias Context = { cookies : String }
 
@@ -106,6 +105,7 @@ init ctx result =
     model = { session   = NotAsked
             , error     = Nothing
             , sessionId = Nothing
+            , sessionLoading = False
             , page      = RegistrationPage ChooseReg
             , cookies   = parseCookies ctx.cookies
             }
@@ -143,16 +143,13 @@ update msg model =
                                        { model | sessionId = Just sessionId }
 
       (SessionMsg (Ask sessionId)) ->
-         { model | session = Loading } ! [ fetchSession sessionId ]
+         { model | sessionLoading = True } ! [ fetchSession sessionId ]
 
       (SessionMsg (ReqSuccess session)) ->
          { model | session = Success session } ! [ Cmd.none ]
 
       (SessionMsg (ReqFail err)) ->
          { model | session = Failure err, error = Just err } ! [ Cmd.none ]
-
-      ClickParty -> refresh model
-      ClickTeam  -> refresh model
 
       SwitchPage newPage ->
          model ! [ Navigation.newUrl (pageToHash newPage) ]

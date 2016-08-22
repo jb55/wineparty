@@ -8,6 +8,7 @@ import Page.Registration exposing (Registration(..))
 type Page = RegistrationPage Registration
           | TeamPage
           | PartyPage
+          | HomePage
 
 pageToHash : Page -> String
 pageToHash page =
@@ -24,6 +25,9 @@ pageToHash page =
     PartyPage ->
       "#party"
 
+    HomePage ->
+      "#"
+
 hashParser loc =
   UrlParser.parse identity pageParser (String.dropLeft 1 loc.hash)
 
@@ -35,4 +39,5 @@ pageParser =
     , format (RegistrationPage ChooseReg)  (s "register")
     , format TeamPage  (s "team")
     , format PartyPage (s "party")
+    , format HomePage  (s "")
     ]
