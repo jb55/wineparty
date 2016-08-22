@@ -6,6 +6,8 @@ import Session.Types exposing (Session)
 import Page exposing (Page(..))
 
 type Msg = FetchSession
+         | ClickParty
+         | ClickTeam
          | NoSessionIdFound
          | SwitchPage Page
          | SessionMsg (RemoteMsg Int String Session)
