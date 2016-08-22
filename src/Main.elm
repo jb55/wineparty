@@ -151,11 +151,11 @@ update msg model =
       (SessionMsg (ReqFail err)) ->
          { model | session = Failure err, error = Just err } ! [ Cmd.none ]
 
-      ClickParty -> refresh model
-      ClickTeam  -> refresh model
-
       SwitchPage newPage ->
-         model ! [ Navigation.newUrl (pageToHash newPage) ]
+        model !
+          if model.page == newPage
+            then [ Cmd.none ]
+            else [ Navigation.newUrl (pageToHash newPage) ]
 
 
 api : String -> String
