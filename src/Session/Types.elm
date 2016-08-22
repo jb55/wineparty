@@ -28,6 +28,6 @@ type alias SessionLookup =
 
 sessionDecoder : Decoder Session
 sessionDecoder = decode Session
-  |> required "user"  (Decode.map Registered userDecoder)
-  |> required "party" (nullable partyDecoder)
-  |> required "team"  (nullable teamDecoder)
+  |> required "user"       (Decode.map Registered userDecoder)
+  |> required "party"      (nullable partyDecoder)
+  |> required "team"       (nullable teamDecoder)

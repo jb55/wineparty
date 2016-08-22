@@ -2,8 +2,13 @@
 
 
 --ours
+import Main.Types exposing (..)
+import Main.View exposing (mainView)
+import Page.Registration exposing (..)
+import Page exposing (..)
 import Party.View as Party
-import Registration.View as Registration
+import Page.Registration exposing (..)
+import RemoteMsg exposing (..)
 import Session.Types exposing (Session, sessionDecoder)
 import User.Types exposing (..)
 
@@ -12,10 +17,12 @@ import Exts.RemoteData as RemoteData
 import Exts.RemoteData exposing (RemoteData(..))
 import Html exposing (..)
 import Html.App as Html
+import Html.Attributes exposing (..)
 import Http
-import Json.Encode as Encode
 import Json.Decode as Decode
 import Json.Decode exposing ((:=))
+import Json.Encode as Encode
+import Navigation
 import Platform.Cmd as Cmd
 import Platform.Cmd exposing (Cmd(..))
 import String exposing (split, trim, join)
@@ -24,45 +31,57 @@ import Task exposing (..)
 type alias Cookies  = Dict String String
 type alias Remote a = RemoteData String a
 
-type alias Model = { session : Remote Session
-                   , error   : Maybe String
-                   , cookies : Dict String String
+type alias Model = { session      : Remote Session
+                   , sessionId    : Maybe Int
+                   , page         : Page
+                   , error        : Maybe String
+                   , cookies      : Dict String String
                    }
 
-type Msg = FetchSessionId
-         | NoSessionIdFound
-         | SessionMsg (RemoteMsg Int String Session)
-
-type RemoteMsg n e a = Ask n
-                     | ReqFail e
-                     | ReqSuccess a
-
 main =
-  Html.programWithFlags
+  Navigation.programWithFlags (Navigation.makeParser hashParser)
     { init = init
     , view = view
     , update = update
+    , urlUpdate = urlUpdate
     , subscriptions = always Sub.none
     }
+
+urlUpdate : Result String Page -> Model -> (Model, Cmd Msg)
+urlUpdate res model =
+  case Debug.log "urlUpdate" res of
+    Err err -> (model, Navigation.modifyUrl (pageToHash model.page))
+    Ok page ->
+      let m = { model | page = page }
+      in
+        case model.session of
+          NotAsked  -> update FetchSession m
+          Failure _ -> update FetchSession m
+          _         -> (m, Cmd.none)
 
 view : Model -> Html Msg
 view model =
     let
         body = case model.session of
                  NotAsked        -> [ text "User needs to be fetched..." ]
-                 Loading         -> [ ]
-                 Success session -> [ initialView session ]
+                 Loading         -> [ text "Loading..." ]
+                 Success session -> [ initialView model.page session ]
                  Failure err     -> [ text ("Ooops, something went wrong: " ++ err) ]
+        user = case model.session of
+                 NotAsked  -> Anonymous
+                 Loading   -> Anonymous
+                 Success s -> s.user
+                 Failure _ -> Anonymous
     in
-        div [] body
+        mainView user (div [] body)
 
-initialView : Session -> Html Msg
-initialView session =
-    case session.user of
-        Anonymous       -> Registration.view
-        Registered user -> case session.party of
-                             Nothing    -> text "No parties"
-                             Just party -> Party.view party
+initialView : Page -> Session -> Html Msg
+initialView page session =
+  case page of
+    RegistrationPage reg -> Html.map (SwitchPage << RegistrationPage)
+                                     (registrationView reg)
+    TeamPage             -> text "Team"
+    PartyPage            -> text "Party"
 
 type alias Context = { cookies : String }
 
@@ -81,39 +100,62 @@ parseCookies =
         List.foldl addCookieToDict Dict.empty << split ";"
 
 
-init : Context -> (Model, Cmd Msg)
-init ctx = update FetchSessionId
-             { session = NotAsked
-             , error   = Nothing
-             , cookies = parseCookies ctx.cookies
-             }
+init : Context -> Result String Page -> (Model, Cmd Msg)
+init ctx result =
+  let
+    model = { session   = NotAsked
+            , error     = Nothing
+            , sessionId = Nothing
+            , page      = RegistrationPage ChooseReg
+            , cookies   = parseCookies ctx.cookies
+            }
+  in
+    urlUpdate result model
+    
+
+
 
 newSession : Session
 newSession = Session Anonymous Nothing Nothing
 
+refresh : Model -> (Model, Cmd Msg)
+refresh model =
+  case model.sessionId of
+    Just sessionId -> update (SessionMsg (Ask sessionId)) model
+    _              -> update FetchSession model
+
+
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
-    case msg of
+    case Debug.log "update" msg of
       NoSessionIdFound ->
-        ({ model | session = Success newSession }, Cmd.none)
+        { model | session = Success newSession } ! [ Cmd.none ]
 
-      FetchSessionId ->
+      FetchSession ->
         let
+            -- TODO: local storage instead
             msessionId = Dict.get "session_id" model.cookies
                            `Maybe.andThen` (Result.toMaybe << String.toInt)
         in
             case msessionId of
               Nothing        -> update NoSessionIdFound model
-              Just sessionId -> update (SessionMsg (Ask sessionId)) model
+              Just sessionId -> update (SessionMsg (Ask sessionId))
+                                       { model | sessionId = Just sessionId }
 
       (SessionMsg (Ask sessionId)) ->
-         ({ model | session = Loading }, fetchSession sessionId)
+         { model | session = Loading } ! [ fetchSession sessionId ]
 
       (SessionMsg (ReqSuccess session)) ->
-         ({ model | session = Success session }, Cmd.none)
+         { model | session = Success session } ! [ Cmd.none ]
 
       (SessionMsg (ReqFail err)) ->
-         ({ model | session = Failure err, error = Just err } , Cmd.none)
+         { model | session = Failure err, error = Just err } ! [ Cmd.none ]
+
+      ClickParty -> refresh model
+      ClickTeam  -> refresh model
+
+      SwitchPage newPage ->
+         model ! [ Navigation.newUrl (pageToHash newPage) ]
 
 
 api : String -> String
