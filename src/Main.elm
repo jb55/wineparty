@@ -2,11 +2,9 @@
 
 
 --ours
-import Party.Types exposing (Party)
 import Party.View as Party
 import Registration.View as Registration
 import Session.Types exposing (Session, sessionDecoder)
-import Team.Types exposing (Team)
 import User.Types exposing (..)
 
 import Dict exposing (Dict)
@@ -84,12 +82,13 @@ parseCookies =
 
 
 init : Context -> (Model, Cmd Msg)
-init ctx = update FetchSessionId 
+init ctx = update FetchSessionId
              { session = NotAsked
              , error   = Nothing
              , cookies = parseCookies ctx.cookies
              }
 
+newSession : Session
 newSession = Session Anonymous Nothing Nothing
 
 update : Msg -> Model -> (Model, Cmd Msg)
@@ -122,7 +121,7 @@ api route = "http://pg-zero.wineparty.xyz" ++ route
 
 
 fetchSession : Int -> Cmd Msg
-fetchSession sessionId = 
+fetchSession sessionId =
   let
       decoder = Decode.map List.head (Decode.list ("get_session" := sessionDecoder))
                   `Decode.andThen` (\x -> case x of
