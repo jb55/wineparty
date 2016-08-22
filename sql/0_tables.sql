@@ -55,3 +55,36 @@ create view user_teams as
   inner join teams as t on t.team_id = ut.team_id;
 
 
+-- create or replace function session(int) returns json
+
+create or replace function get_session(_session_id int) returns json
+as $$
+  select row_to_json(t)
+  from (
+    select
+      (
+        select row_to_json(d)
+        from (
+          select * from party
+          where party_id=sessions.party_id
+        ) d
+      ) as party,
+      (
+        select row_to_json(d)
+        from (
+          select * from teams
+          where team_id=sessions.team_id
+        ) d
+      ) as team,
+      (
+        select row_to_json(d)
+        from (
+          select * from users
+          where user_id=sessions.user_id
+        ) d
+      ) as user
+    from sessions
+    where session_id=$1
+  ) t;
+$$
+language sql;

@@ -19,4 +19,4 @@ type User = Anonymous
 userDecoder : Decoder UserData
 userDecoder = decode UserData
                 |> required "name" string
-                |> required "id" int
+                |> required "user_id" int

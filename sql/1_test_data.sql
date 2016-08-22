@@ -15,6 +15,7 @@ begin
   delete from teams;
   delete from party;
   delete from users;
+  delete from sessions;
 
   insert into party (name) values ('Rags to Riches')
     returning party_id into a_party_id;
@@ -42,5 +43,8 @@ begin
     (anwar_id,   team_b),
     (william_id, team_a),
     (vanessa_id, team_a);
+
+  insert into sessions (session_id, user_id, team_id, party_id) values
+    (1, william_id, team_a, a_party_id);
 
 end$$

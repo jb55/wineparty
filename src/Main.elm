@@ -1,42 +1,51 @@
 
+
+
 --ours
+import Party.Types exposing (Party)
+import Party.View as Party
 import Registration.View as Registration
 import Session.Types exposing (Session, sessionDecoder)
+import Team.Types exposing (Team)
 import User.Types exposing (..)
-import Party.View as Party
 
-import Cookies
+import Dict exposing (Dict)
 import Exts.RemoteData as RemoteData
 import Exts.RemoteData exposing (RemoteData(..))
 import Html exposing (..)
 import Html.App as Html
 import Http
-import String
-import Dict exposing (Dict)
+import Json.Encode as Encode
+import Json.Decode as Decode
+import Json.Decode exposing ((:=))
 import Platform.Cmd as Cmd
 import Platform.Cmd exposing (Cmd(..))
+import String exposing (split, trim, join)
 import Task exposing (..)
 
-type alias Cookies = Dict String String
+type alias Cookies  = Dict String String
+type alias Remote a = RemoteData String a
 
-type alias Model = { session : RemoteData String Session
-                   , cookies : RemoteData String Cookies
+type alias Model = { session : Remote Session
+                   , error   : Maybe String
+                   , cookies : Dict String String
                    }
 
-type Msg = CookieMsg (RemoteMsg () String Cookies)
+type Msg = FetchSessionId
+         | NoSessionIdFound
          | SessionMsg (RemoteMsg Int String Session)
 
 type RemoteMsg n e a = Ask n
                      | ReqFail e
                      | ReqSuccess a
 
-main : Program Never
 main =
-  Html.program { init = init
-               , view = view
-               , update = update
-               , subscriptions = always Sub.none
-               }
+  Html.programWithFlags
+    { init = init
+    , view = view
+    , update = update
+    , subscriptions = always Sub.none
+    }
 
 view : Model -> Html Msg
 view model =
@@ -54,34 +63,49 @@ initialView session =
     case session.user of
         Anonymous       -> Registration.view
         Registered user -> case session.party of
-                             Nothing -> text "No party created"
-                             Just p  -> Party.view p
+                             Nothing    -> text "No parties"
+                             Just party -> Party.view party
+
+type alias Context = { cookies : String }
+
+parseCookies : String -> Dict String String
+parseCookies =
+    let
+        addCookieToDict =
+            trim >> split "=" >> List.map Http.uriDecode >> addKeyValueToDict
+
+        addKeyValueToDict keyValueList =
+            case keyValueList of
+                key :: value :: _ -> Dict.insert key value
+                _ -> identity
+
+    in
+        List.foldl addCookieToDict Dict.empty << split ";"
 
 
-init : (Model, Cmd Msg)
-init = update (CookieMsg (Ask ())) { session = NotAsked, cookies = Loading }
+init : Context -> (Model, Cmd Msg)
+init ctx = update FetchSessionId 
+             { session = NotAsked
+             , error   = Nothing
+             , cookies = parseCookies ctx.cookies
+             }
+
+newSession = Session Anonymous Nothing Nothing
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
-      (CookieMsg (ReqFail err)) ->
-        ({ model | cookies = Failure err }, Cmd.none)
+      NoSessionIdFound ->
+        ({ model | session = Success newSession }, Cmd.none)
 
-      (CookieMsg (ReqSuccess d)) ->
+      FetchSessionId ->
         let
-            updatedModel = { model | cookies = Success d }
-            msessionId = Dict.get "sessionId" d
+            msessionId = Dict.get "session_id" model.cookies
                            `Maybe.andThen` (Result.toMaybe << String.toInt)
         in
             case msessionId of
-              Nothing ->
-                update (CookieMsg (ReqFail "session-id not found")) updatedModel
-              Just sessionId -> update (SessionMsg (Ask sessionId)) updatedModel
-
-      (CookieMsg (Ask ())) ->
-        (model, Task.perform (CookieMsg << ReqFail << toString)
-                             (CookieMsg << ReqSuccess)
-                             Cookies.get)
+              Nothing        -> update NoSessionIdFound model
+              Just sessionId -> update (SessionMsg (Ask sessionId)) model
 
       (SessionMsg (Ask sessionId)) ->
          ({ model | session = Loading }, fetchSession sessionId)
@@ -90,17 +114,29 @@ update msg model =
          ({ model | session = Success session }, Cmd.none)
 
       (SessionMsg (ReqFail err)) ->
-         ({ model | session = Failure err }, Cmd.none)
+         ({ model | session = Failure err, error = Just err } , Cmd.none)
 
 
 api : String -> String
 api route = "http://pg-zero.wineparty.xyz" ++ route
 
+
 fetchSession : Int -> Cmd Msg
-fetchSession sessionId =
-    let getSession = Http.get sessionDecoder
-                       (api ("/sessions?session_id=eq." ++ toString sessionId))
-    in
-        Task.perform (SessionMsg << ReqFail << toString)
-                     (SessionMsg << ReqSuccess)
-                     getSession
+fetchSession sessionId = 
+  let
+      decoder = Decode.map List.head (Decode.list ("get_session" := sessionDecoder))
+                  `Decode.andThen` (\x -> case x of
+                                            Nothing -> Decode.fail "get_session: empty list"
+                                            Just x  -> Decode.succeed x)
+      json    = Encode.object [("_session_id", Encode.int sessionId)]
+      body    = Http.string (Encode.encode 0 json)
+      req     = Http.send Http.defaultSettings
+                 { verb    = "POST"
+                 , headers = [("Content-Type", "application/json")]
+                 , url     = api "/rpc/get_session"
+                 , body    = body
+                 }
+  in
+      Task.perform (SessionMsg << ReqFail << toString)
+                   (SessionMsg << ReqSuccess)
+                   (Http.fromJson decoder req)
